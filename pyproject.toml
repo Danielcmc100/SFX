@@ -1,0 +1,49 @@
+[project]
+name = "sfx"
+version = "0.0.1"
+description = "A application designed to play sound effects via requests to an API"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]>=0.115.6",
+    "pygame>=2.6.1",
+    "sqlmodel>=0.0.22",
+    "streamlit>=1.41.1",
+]
+
+[dependency-groups]
+dev = []
+
+
+[tool.streamlit]
+server.headless = true
+server.runOnSave = true
+
+[tool.pyright]
+strict = ["true"]
+
+
+[tool.ruff]
+line-length = 79
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+preview = true
+select = ["ALL"]
+ignore = ["S101", "D211", "D213", "COM812", "D203", "ISC001", "ANN401", "B008"]
+
+
+[tool.ruff.format]
+preview = true
+
+[tool.pytest.ini_options]
+pythonpath = "."
+addopts = '-p no:warnings'
+
+[tool.taskipy.tasks]
+front = "uv run streamlit run src/frontend.py"
+back = "uv run fastapi dev src/backend.py"
+format = 'uv run ruff check . --fix; uv run ruff format .'
+pre_test = 'task lint'
+test = 'uv run pytest -s -x --cov=pdv -vv'
+post_test = 'uv run coverage html'
