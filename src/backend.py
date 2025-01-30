@@ -1,4 +1,4 @@
-# Copyright 123 danielcmc100
+# Copyright 2025 danielcmc100
 # All rights reserved.
 
 """Backend for the SFX project."""
@@ -10,7 +10,7 @@ from typing import Annotated
 
 import pygame
 import uvicorn
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
@@ -21,20 +21,22 @@ engine = create_engine(DATABASE_URL)
 
 pygame.mixer.init()
 
-SQLModel.metadata.create_all(engine)
-
 
 class SoundEffectPublic(SQLModel):
     """Sound effect model."""
 
     id: int = Field(default=None, primary_key=True)
-    name: str
+    name: str = Field(unique=True)
+    sender_ip: str
 
 
 class SoundEffect(SoundEffectPublic, table=True):
     """Sound effect model."""
 
     data: bytes = File(...)
+
+
+SQLModel.metadata.create_all(engine)
 
 
 @app.get("/sfx")
@@ -51,7 +53,7 @@ def get_sfx() -> Sequence[SoundEffectPublic]:
 
 @app.post("/sfx")
 async def upload_file(
-    name: str, file: Annotated[UploadFile, File(...)]
+    request: Request, name: str, file: Annotated[UploadFile, File(...)]
 ) -> JSONResponse:
     """Upload a file to the server.
 
@@ -61,10 +63,21 @@ async def upload_file(
     """
     if file.content_type != "audio/mpeg":
         return JSONResponse(
-            content={"message": "Invalid file type"}, status_code=400
+            content={"message": "Invalid file type"},
+            status_code=HTTPStatus.BAD_REQUEST,
         )
 
-    sound_effect = SoundEffect(name=name, data=await file.read())
+    if not (clinet := request.client):
+        return JSONResponse(
+            content={"message": "Invalid client"},
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
+
+    sender_ip = clinet.host
+
+    sound_effect = SoundEffect(
+        name=name, data=await file.read(), sender_ip=sender_ip
+    )
     with Session(engine) as session:
         session.add(sound_effect)
         session.commit()
