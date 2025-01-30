@@ -1,4 +1,4 @@
-# Copyright 123 danielcmc100
+# Copyright 2025 danielcmc100
 # All rights reserved.
 
 """The frontend for the PSTG-SFX project."""  # Copyright danielcmc100

@@ -1,17 +1,22 @@
-# Copyright 123 danielcmc100
+# Copyright 2025 danielcmc100
 # All rights reserved.
 
 """Backend for the SFX project."""
 
+import io
 import tempfile
+import threading
 from collections.abc import Sequence
+from functools import cache
 from http import HTTPStatus
+from pathlib import Path
 from typing import Annotated
 
-import pygame
 import uvicorn
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydub import AudioSegment
+from pydub.playback import play
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 app = FastAPI()
@@ -19,22 +24,22 @@ app = FastAPI()
 DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL)
 
-pygame.mixer.init()
-
-SQLModel.metadata.create_all(engine)
-
 
 class SoundEffectPublic(SQLModel):
     """Sound effect model."""
 
     id: int = Field(default=None, primary_key=True)
-    name: str
+    name: str = Field(sa_column_kwargs={"unique": True})
 
 
 class SoundEffect(SoundEffectPublic, table=True):
     """Sound effect model."""
 
     data: bytes = File(...)
+    sender_id: str = Field(default=None)
+
+
+SQLModel.metadata.create_all(engine)
 
 
 @app.get("/sfx")
@@ -51,7 +56,7 @@ def get_sfx() -> Sequence[SoundEffectPublic]:
 
 @app.post("/sfx")
 async def upload_file(
-    name: str, file: Annotated[UploadFile, File(...)]
+    request: Request, name: str, file: Annotated[UploadFile, File(...)]
 ) -> JSONResponse:
     """Upload a file to the server.
 
@@ -61,10 +66,21 @@ async def upload_file(
     """
     if file.content_type != "audio/mpeg":
         return JSONResponse(
-            content={"message": "Invalid file type"}, status_code=400
+            content={"message": "Invalid file type"},
+            status_code=HTTPStatus.BAD_REQUEST,
         )
 
-    sound_effect = SoundEffect(name=name, data=await file.read())
+    if not (client := request.client):
+        return JSONResponse(
+            content={"message": "Invalid client"},
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
+
+    sender_id = client.host
+
+    sound_effect = SoundEffect(
+        name=name, data=await file.read(), sender_id=sender_id
+    )
     with Session(engine) as session:
         session.add(sound_effect)
         session.commit()
@@ -73,17 +89,30 @@ async def upload_file(
     )
 
 
-def load_audio_from_bytes(audio_bytes: bytes) -> None:
-    """Load audio from bytes."""
-    with tempfile.NamedTemporaryFile(suffix=".mp3") as temp_audio:
+def load_audio_from_bytes(audio_bytes: bytes) -> Path:
+    """Load audio from bytes.
+
+    Args:
+        audio_bytes (bytes): The audio data in bytes.
+
+    Returns:
+        Path: The path to the temporary audio file.
+
+    """
+    with tempfile.NamedTemporaryFile(
+        suffix=".mp3", delete=False
+    ) as temp_audio:
         temp_audio.write(audio_bytes)
-        pygame.mixer.music.load(temp_audio.name)
+        return Path(temp_audio.name)
 
 
+@cache
 def play_audio(audio_bytes: bytes) -> None:
     """Play audio from bytes."""
-    load_audio_from_bytes(audio_bytes)
-    pygame.mixer.music.play()
+    audio_segment = AudioSegment.from_file(
+        io.BytesIO(audio_bytes), format="mp3"
+    )
+    threading.Thread(target=play, args=(audio_segment,)).start()
 
 
 @app.get("/play")
