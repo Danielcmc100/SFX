@@ -3,15 +3,20 @@
 
 """Backend for the SFX project."""
 
+import io
 import tempfile
+import threading
 from collections.abc import Sequence
+from functools import cache
 from http import HTTPStatus
+from pathlib import Path
 from typing import Annotated
 
-import pygame
 import uvicorn
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydub import AudioSegment
+from pydub.playback import play
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 app = FastAPI()
@@ -19,15 +24,13 @@ app = FastAPI()
 DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL)
 
-pygame.mixer.init()
-
 
 class SoundEffectPublic(SQLModel):
     """Sound effect model."""
 
     id: int = Field(default=None, primary_key=True)
     name: str = Field(unique=True)
-    sender_ip: str
+    sender_ip: str = Field(default=None)
 
 
 class SoundEffect(SoundEffectPublic, table=True):
@@ -86,17 +89,30 @@ async def upload_file(
     )
 
 
-def load_audio_from_bytes(audio_bytes: bytes) -> None:
-    """Load audio from bytes."""
-    with tempfile.NamedTemporaryFile(suffix=".mp3") as temp_audio:
+def load_audio_from_bytes(audio_bytes: bytes) -> Path:
+    """Load audio from bytes.
+
+    Args:
+        audio_bytes (bytes): The audio data in bytes.
+
+    Returns:
+        Path: The path to the temporary audio file.
+
+    """
+    with tempfile.NamedTemporaryFile(
+        suffix=".mp3", delete=False
+    ) as temp_audio:
         temp_audio.write(audio_bytes)
-        pygame.mixer.music.load(temp_audio.name)
+        return Path(temp_audio.name)
 
 
+@cache
 def play_audio(audio_bytes: bytes) -> None:
     """Play audio from bytes."""
-    load_audio_from_bytes(audio_bytes)
-    pygame.mixer.music.play()
+    audio_segment = AudioSegment.from_file(
+        io.BytesIO(audio_bytes), format="mp3"
+    )
+    threading.Thread(target=play, args=(audio_segment,)).start()
 
 
 @app.get("/play")
@@ -109,4 +125,4 @@ def play_audio_by_id(audio_id: int) -> None:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
