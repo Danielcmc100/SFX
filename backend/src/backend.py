@@ -4,22 +4,31 @@
 """Backend for the SFX project."""
 
 import io
-import tempfile
 import threading
 from collections.abc import Sequence
-from functools import cache
 from http import HTTPStatus
-from pathlib import Path
 from typing import Annotated
 
 import uvicorn
 from fastapi import FastAPI, File, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydub import AudioSegment
 from pydub.playback import play
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 app = FastAPI()
+
+# Adicione o middleware CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "*"
+    ],  # Permite todas as origens, ajuste conforme necessário
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos os métodos HTTP
+    allow_headers=["*"],  # Permite todos os cabeçalhos
+)
 
 DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL)
@@ -89,30 +98,13 @@ async def upload_file(
     )
 
 
-def load_audio_from_bytes(audio_bytes: bytes) -> Path:
-    """Load audio from bytes.
-
-    Args:
-        audio_bytes (bytes): The audio data in bytes.
-
-    Returns:
-        Path: The path to the temporary audio file.
-
-    """
-    with tempfile.NamedTemporaryFile(
-        suffix=".mp3", delete=False
-    ) as temp_audio:
-        temp_audio.write(audio_bytes)
-        return Path(temp_audio.name)
-
-
-@cache
 def play_audio(audio_bytes: bytes) -> None:
     """Play audio from bytes."""
     audio_segment = AudioSegment.from_file(
         io.BytesIO(audio_bytes), format="mp3"
     )
     threading.Thread(target=play, args=(audio_segment,)).start()
+    # play(audio_segment)
 
 
 @app.get("/play")

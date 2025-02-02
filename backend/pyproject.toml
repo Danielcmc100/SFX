@@ -5,10 +5,11 @@ description = "A application designed to play sound effects via requests to an A
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi[standard]>=0.115.6",
+    "fastapi[all,standard]>=0.115.6",
     "pyaudio>=0.2.14",
     "pydub>=0.25.1",
     "sqlmodel>=0.0.22",
+    "streamlit-javascript>=0.1.5",
     "streamlit>=1.41.1",
 ]
 
