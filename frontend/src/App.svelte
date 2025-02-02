@@ -3,16 +3,23 @@
   let sounds = [];
   let name = '';
   let file = null;
+  let hostIP = '';
+
+  onMount(async () => {
+    // hostIP = await getHostIP();
+    hostIP = "192.168.3.8"
+    fetchSounds();
+  });
 
   async function fetchSounds() {
-    const response = await fetch('http://localhost:8000/sfx');
+    const response = await fetch(`http://${hostIP}:8000/sfx`);
     if (response.ok) {
       sounds = await response.json();
     }
   }
 
   async function playSound(id) {
-    await fetch(`http://localhost:8000/play?audio_id=${id}`);
+    await fetch(`http://${hostIP}:8000/play?audio_id=${id}`);
   }
 
   async function uploadSound() {
@@ -20,7 +27,7 @@
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`http://localhost:8000/sfx?name=${name}`, {
+      const response = await fetch(`http://${hostIP}:8000/sfx?name=${name}`, {
         method: 'POST',
         body: formData,
       });
@@ -35,28 +42,30 @@
       alert('Please enter a name and select a file');
     }
   }
-
-  onMount(fetchSounds);
 </script>
 
 <main>
   <h1>SFX</h1>
   <p>Sounds:</p>
-  {#each sounds as sound}
-    <button on:click={() => playSound(sound.id)}>{sound.name}</button>
-  {/each}
+  <div class="sounds"> 
+    {#each sounds as sound}
+      <button on:click={() => playSound(sound.id)}>{sound.name}</button>
+    {/each}
+  </div>
 
-  <h2>Upload a sound effect</h2>
-  <input type="text" bind:value={name} placeholder="Name" />
-  <input type="file" accept="audio/mp3" on:change={e => file = e.target.files[0]} />
-  <button on:click={uploadSound}>Upload</button>
+  <div class="upload-container">
+    <h2>Upload a sound effect</h2>
+    <input type="text" bind:value={name} placeholder="Name" />
+    <input type="file" accept="audio/mp3" on:change={e => file = e.target.files[0]} />
+    <button on:click={uploadSound}>Upload</button>
+  </div>
+
 </main>
 
 <style>
   main {
     text-align: center;
     padding: 1em;
-    max-width: 240px;
     margin: 0 auto;
   }
 
@@ -75,5 +84,31 @@
 
   button {
     margin-top: 1em;
+    margin: 0.5em;
+  }
+
+
+  .upload-container {
+    margin-top: 2em;
+    padding: 1em;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    display: inline-block;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sounds {
+    margin-top: 2em;
+    padding: 1em;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    display: inline-block;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
 </style>

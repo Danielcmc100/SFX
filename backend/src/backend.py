@@ -22,12 +22,10 @@ app = FastAPI()
 # Adicione o middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "*"
-    ],  # Permite todas as origens, ajuste conforme necessário
-    allow_credentials=True,
+    allow_origins=["*"],  # Permite a origem específica
     allow_methods=["*"],  # Permite todos os métodos HTTP
     allow_headers=["*"],  # Permite todos os cabeçalhos
+    allow_credentials=True,  # Permite o envio de credenciais
 )
 
 DATABASE_URL = "sqlite:///./test.db"
@@ -116,4 +114,4 @@ def play_audio_by_id(audio_id: int) -> None:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
