@@ -104,7 +104,6 @@ def play_audio(audio_bytes: bytes) -> None:
         io.BytesIO(audio_bytes), format="mp3"
     )
     threading.Thread(target=play, args=(audio_segment,)).start()
-    # play(audio_segment)
 
 
 @app.get("/play")
