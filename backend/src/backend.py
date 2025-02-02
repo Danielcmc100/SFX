@@ -4,10 +4,11 @@
 """Backend for the SFX project."""
 
 import io
-import threading
+from collections import defaultdict
 from collections.abc import Sequence
 from functools import cache
 from http import HTTPStatus
+from threading import Thread
 from typing import Annotated
 
 import uvicorn
@@ -19,6 +20,7 @@ from pydub.playback import play
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 app = FastAPI()
+
 
 # Adicione o middleware CORS
 app.add_middleware(
@@ -33,6 +35,8 @@ DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL)
 
 TARGET_DBFS = -20.0  # Definindo o nível de volume alvo em dBFS
+
+SPAM_MODE = True
 
 
 class SoundEffectPublic(SQLModel):
@@ -64,6 +68,22 @@ def get_sfx() -> Sequence[SoundEffectPublic]:
         return session.exec(select(SoundEffect)).all()
 
 
+def get_client_ip(request: Request) -> str | JSONResponse:
+    """Get the client IP address.
+
+    Returns:
+        str: Client IP address
+
+    """
+    if not (clinet := request.client):
+        return JSONResponse(
+            content={"message": "Invalid client"},
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
+
+    return clinet.host
+
+
 @app.post("/sfx")
 async def upload_file(
     request: Request, name: str, file: Annotated[UploadFile, File(...)]
@@ -80,13 +100,9 @@ async def upload_file(
             status_code=HTTPStatus.BAD_REQUEST,
         )
 
-    if not (clinet := request.client):
-        return JSONResponse(
-            content={"message": "Invalid client"},
-            status_code=HTTPStatus.BAD_REQUEST,
-        )
-
-    sender_ip = clinet.host
+    sender_ip = get_client_ip(request)
+    if isinstance(sender_ip, JSONResponse):
+        return sender_ip
 
     sound_effect = SoundEffect(
         name=name, data=await file.read(), sender_ip=sender_ip
@@ -99,9 +115,23 @@ async def upload_file(
     )
 
 
-def play_audio(audio_bytes: bytes) -> None:
-    """Play audio from bytes."""
-    play_normalized_audio(audio_bytes)
+playing_audios = defaultdict(list[Thread])
+
+
+def play_audio(audio_bytes: bytes) -> Thread:
+    """Play audio from bytes.
+
+    Returns:
+        Thread: Thread object
+
+    """
+    audio_segment = load_audio(audio_bytes)
+    normalized_audio = normalize_audio(audio_segment)
+
+    thread = Thread(target=play, args=(normalized_audio,))
+    thread.start()
+
+    return thread
 
 
 @cache
@@ -129,21 +159,23 @@ def normalize_audio(audio_segment: AudioSegment) -> AudioSegment:
     return compressed_audio.apply_gain(change_in_dbfs)
 
 
-def play_normalized_audio(audio_bytes: bytes) -> None:
-    """Play audio from bytes."""
-    audio_segment = load_audio(audio_bytes)
-    normalized_audio = normalize_audio(audio_segment)
-
-    threading.Thread(target=play, args=(normalized_audio,)).start()
-
-
 @app.get("/play")
-def play_audio_by_id(audio_id: int) -> None:
+def play_audio_by_id(request: Request, audio_id: int) -> None:
     """Play audio by id."""
     with Session(engine) as session:
         sound_effect = session.get(SoundEffect, audio_id)
         if sound_effect:
-            play_audio(sound_effect.data)
+            sender_ip = get_client_ip(request)
+            if isinstance(sender_ip, JSONResponse):
+                return sender_ip
+
+            if SPAM_MODE or playing_audios[sender_ip]:
+                thread = play_audio(sound_effect.data)
+                playing_audios[sender_ip].append(thread)
+                thread.join()
+                playing_audios[sender_ip].pop()
+
+    return None
 
 
 if __name__ == "__main__":
