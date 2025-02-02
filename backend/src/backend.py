@@ -6,6 +6,7 @@
 import io
 import threading
 from collections.abc import Sequence
+from functools import cache
 from http import HTTPStatus
 from typing import Annotated
 
@@ -30,6 +31,8 @@ app.add_middleware(
 
 DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL)
+
+TARGET_DBFS = -20.0  # Definindo o nível de volume alvo em dBFS
 
 
 class SoundEffectPublic(SQLModel):
@@ -98,10 +101,40 @@ async def upload_file(
 
 def play_audio(audio_bytes: bytes) -> None:
     """Play audio from bytes."""
-    audio_segment = AudioSegment.from_file(
-        io.BytesIO(audio_bytes), format="mp3"
-    )
-    threading.Thread(target=play, args=(audio_segment,)).start()
+    play_normalized_audio(audio_bytes)
+
+
+@cache
+def load_audio(audio_bytes: bytes) -> AudioSegment:
+    """Load audio from bytes.
+
+    Returns:
+        AudioSegment: Audio segment object
+
+    """
+    return AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
+
+
+@cache
+def normalize_audio(audio_segment: AudioSegment) -> AudioSegment:
+    """Normalize audio.
+
+    Returns:
+        AudioSegment: Normalized audio segment
+
+    """
+    compressed_audio = audio_segment.compress_dynamic_range()
+
+    change_in_dbfs = TARGET_DBFS - compressed_audio.dBFS
+    return compressed_audio.apply_gain(change_in_dbfs)
+
+
+def play_normalized_audio(audio_bytes: bytes) -> None:
+    """Play audio from bytes."""
+    audio_segment = load_audio(audio_bytes)
+    normalized_audio = normalize_audio(audio_segment)
+
+    threading.Thread(target=play, args=(normalized_audio,)).start()
 
 
 @app.get("/play")

@@ -3,14 +3,11 @@ name = "sfx"
 version = "0.0.1"
 description = "A application designed to play sound effects via requests to an API"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi[all,standard]>=0.115.6",
-    "pyaudio>=0.2.14",
     "pydub>=0.25.1",
     "sqlmodel>=0.0.22",
-    "streamlit-javascript>=0.1.5",
-    "streamlit>=1.41.1",
 ]
 
 [dependency-groups]
@@ -45,8 +42,8 @@ pythonpath = "."
 addopts = '-p no:warnings'
 
 [tool.taskipy.tasks]
-front = "uv run streamlit run src/frontend.py"
-back = "uv run fastapi dev src/backend.py"
+front = "npm start dev"
+back = "uv run src/backend.py "
 format = 'uv run ruff check . --fix; uv run ruff format .'
 pre_test = 'task lint'
 test = 'uv run pytest -s -x --cov=pdv -vv'

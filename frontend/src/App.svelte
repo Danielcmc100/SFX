@@ -34,6 +34,8 @@
 
       if (response.ok) {
         alert('File uploaded successfully');
+        name = '';
+        file = null;
         fetchSounds(); // Refresh the list of sounds
       } else {
         alert('Failed to upload file');
