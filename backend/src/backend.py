@@ -3,16 +3,25 @@
 
 """Backend for the SFX project."""
 
+import asyncio
 import io
+import operator
 from collections import defaultdict
 from collections.abc import Sequence
-from functools import cache
+from functools import cache, reduce
 from http import HTTPStatus
 from threading import Thread
 from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import (
+    FastAPI,
+    File,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydub import AudioSegment
@@ -37,6 +46,12 @@ engine = create_engine(DATABASE_URL)
 TARGET_DBFS = -20.0  # Definindo o nível de volume alvo em dBFS
 
 SPAM_MODE = True
+
+stream_events: dict[tuple[str, int], asyncio.Event] = {}
+stream_data: dict[tuple[str, int], bytes] = {}
+
+CHUNK_SIZE = 64 * 1024  # 64KB por chunk
+connections: dict[str, list[WebSocket]] = defaultdict(list)
 
 
 class SoundEffectPublic(SQLModel):
@@ -159,21 +174,50 @@ def normalize_audio(audio_segment: AudioSegment) -> AudioSegment:
     return compressed_audio.apply_gain(change_in_dbfs)
 
 
+@app.websocket("/ws/audio")
+async def ws_audio(websocket: WebSocket) -> None:
+    """WebSocket endpoint for audio streaming."""
+    await websocket.accept()
+    client_ip = websocket.client.host
+    connections[client_ip].append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # mantém a conexão viva
+    except WebSocketDisconnect:
+        connections[client_ip].remove(websocket)
+
+
 @app.get("/play")
-def play_audio_by_id(request: Request, audio_id: int) -> None:
-    """Play audio by id."""
+async def play_audio_by_id(request: Request, audio_id: int) -> None:
+    """Play audio by id: envia em chunks binários via WebSocket."""
     with Session(engine) as session:
         sound_effect = session.get(SoundEffect, audio_id)
-        if sound_effect:
-            sender_ip = get_client_ip(request)
-            if isinstance(sender_ip, JSONResponse):
-                return sender_ip
+        if not sound_effect:
+            return None
 
-            if SPAM_MODE or playing_audios[sender_ip]:
-                thread = play_audio(sound_effect.data)
-                playing_audios[sender_ip].append(thread)
-                thread.join()
-                playing_audios[sender_ip].pop()
+    sender_ip = get_client_ip(request)
+    if isinstance(sender_ip, JSONResponse):
+        return sender_ip
+
+    sockets = reduce(operator.iadd, connections.values(), [])
+    if not sockets:
+        return None
+
+    data = sound_effect.data
+    total_chunks = (len(data) + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+    for seq in range(total_chunks):
+        start = seq * CHUNK_SIZE
+        end = start + CHUNK_SIZE
+        chunk = data[start:end]
+        header = {
+            "audio_id": audio_id,
+            "seq": seq,
+            "final": seq == total_chunks - 1,
+        }
+        for ws in sockets:
+            await ws.send_json(header)
+            await ws.send_bytes(chunk)
 
     return None
 
